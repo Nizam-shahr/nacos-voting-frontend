@@ -70,7 +70,7 @@ export default function Vote() {
     const position = positions[currentPositionIndex];
 
     try {
-      const res = await fetch('/api/vote', {
+      const res = await fetch('https://nacos-voting-backend-2ml5.onrender.com/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

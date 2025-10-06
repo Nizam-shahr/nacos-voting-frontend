@@ -17,8 +17,16 @@ export default function Home() {
     setError('');
     setAlreadyVoted(false);
     
-    if (!fullName.trim()) {
-      setError('Please enter your full name');
+    if (!fullName.trim() || !personalEmail.trim() || !institutionalEmail.trim() || !matricNumber.trim()) {
+      setError('Please fill in all required fields');
+      setLoading(false);
+      return;
+    }
+
+    // Basic client-side name validation
+    const nameParts = fullName.trim().split(' ').filter(part => part.length > 1);
+    if (nameParts.length < 2) {
+      setError('Please enter your complete first and last name');
       setLoading(false);
       return;
     }
@@ -56,7 +64,7 @@ export default function Home() {
         setError(data.error || 'Sign-in failed');
       }
     } catch (err) {
-      setError('Sign-in failed: ' + err.message);
+      setError('Sign-in failed. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -72,8 +80,7 @@ export default function Home() {
         
         <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
           <p className="text-sm text-blue-800">
-            <strong>Note:</strong> Use your Alhikmah University institutional email and matric number.
-            Format: 2203sen001@alhikmah.edu.ng and 22/03sen001
+            <strong>Note:</strong> All fields are required for verification purposes.
           </p>
         </div>
 
@@ -109,6 +116,7 @@ export default function Home() {
               placeholder="John Doe"
               required
             />
+            <p className="text-xs text-gray-500 mt-1">Enter your complete first and last name</p>
           </div>
 
           <div>
@@ -129,7 +137,7 @@ export default function Home() {
 
           <div>
             <label htmlFor="personalEmail" className="block text-sm font-medium text-gray-700">
-              Personal Email (Optional)
+              Personal Email *
             </label>
             <input
               type="email"
@@ -138,8 +146,9 @@ export default function Home() {
               onChange={(e) => setPersonalEmail(e.target.value)}
               className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="your.email@gmail.com"
+              required
             />
-            <p className="text-xs text-gray-500 mt-1">For important updates</p>
+            <p className="text-xs text-gray-500 mt-1">Your active personal email address</p>
           </div>
           
           <div>
