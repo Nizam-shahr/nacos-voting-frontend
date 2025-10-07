@@ -3,8 +3,11 @@ import { useRouter } from 'next/router';
 import Image from 'next/image';
 
 export default function PublicResults() {
-  const [voteCounts, setVoteCounts] = useState({});
-  const [totalVotes, setTotalVotes] = useState(0);
+  const [resultsData, setResultsData] = useState({
+    voteCounts: {},
+    totalVotes: 0,
+    lastUpdated: ''
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -15,15 +18,10 @@ export default function PublicResults() {
 
   const fetchVoteCounts = async () => {
     try {
-      const res = await fetch('/api/public/votes');
+      const res = await fetch(`/api/public/votes`);
       const data = await res.json();
       if (res.ok) {
-        setVoteCounts(data);
-        // Calculate total votes
-        const total = Object.values(data).reduce((sum, candidates) => 
-          sum + candidates.reduce((candidateSum, candidate) => candidateSum + candidate.votes, 0), 0
-        );
-        setTotalVotes(total);
+        setResultsData(data);
       } else {
         setError(data.error || 'Failed to load results');
       }
@@ -35,7 +33,7 @@ export default function PublicResults() {
   };
 
   const getWinner = (candidates) => {
-    if (!candidates || candidates.length === 0) return null;
+    if (!candidates || !Array.isArray(candidates) || candidates.length === 0) return null;
     const sorted = [...candidates].sort((a, b) => b.votes - a.votes);
     return sorted[0].votes > 0 ? sorted[0] : null;
   };
@@ -52,6 +50,11 @@ export default function PublicResults() {
     );
   }
 
+  // Calculate total votes from voteCounts
+  const totalVotes = resultsData.totalVotes || Object.values(resultsData.voteCounts || {}).reduce((sum, candidates) => 
+    sum + (Array.isArray(candidates) ? candidates.reduce((candidateSum, candidate) => candidateSum + (candidate.votes || 0), 0) : 0), 0
+  );
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
@@ -63,6 +66,11 @@ export default function PublicResults() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-800">NACOS 2025/2026 Election Results</h1>
                 <p className="text-gray-600">Live Vote Count - Transparent Results</p>
+                {resultsData.lastUpdated && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Last updated: {new Date(resultsData.lastUpdated).toLocaleString()}
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-4 md:mt-0 text-center">
@@ -77,18 +85,27 @@ export default function PublicResults() {
 
       {/* Navigation */}
       <div className="max-w-6xl mx-auto px-4 py-4">
-        <div className="flex space-x-4">
+        <div className="flex flex-wrap gap-4">
           <button
             onClick={() => router.push('/votes-table')}
-            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
+            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
           >
             View Votes Table
           </button>
           <button
             onClick={() => router.push('/')}
-            className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700"
+            className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
           >
             Back to Home
+          </button>
+          <button
+            onClick={fetchVoteCounts}
+            className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors flex items-center"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh Results
           </button>
         </div>
       </div>
@@ -102,16 +119,18 @@ export default function PublicResults() {
         )}
 
         <div className="space-y-6">
-          {Object.keys(voteCounts).length === 0 ? (
+          {!resultsData.voteCounts || Object.keys(resultsData.voteCounts).length === 0 ? (
             <div className="bg-white rounded-lg shadow-lg p-8 text-center">
               <div className="text-6xl mb-4">🗳️</div>
               <h2 className="text-xl font-semibold text-gray-800 mb-2">No Votes Yet</h2>
               <p className="text-gray-600">Election results will appear here once voting begins.</p>
             </div>
           ) : (
-            Object.entries(voteCounts).map(([position, candidates]) => {
-              const winner = getWinner(candidates);
-              const totalPositionVotes = candidates.reduce((sum, candidate) => sum + candidate.votes, 0);
+            Object.entries(resultsData.voteCounts).map(([position, candidates]) => {
+              // Ensure candidates is an array
+              const candidateArray = Array.isArray(candidates) ? candidates : [];
+              const winner = getWinner(candidateArray);
+              const totalPositionVotes = candidateArray.reduce((sum, candidate) => sum + (candidate.votes || 0), 0);
               
               return (
                 <div key={position} className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -136,44 +155,50 @@ export default function PublicResults() {
                   {/* Candidates List */}
                   <div className="p-6">
                     <div className="grid gap-4">
-                      {candidates.map((candidate, index) => {
-                        const percentage = totalPositionVotes > 0 
-                          ? (candidate.votes / totalPositionVotes) * 100 
-                          : 0;
-                        
-                        return (
-                          <div key={index} className="border border-gray-200 rounded-lg p-4">
-                            <div className="flex justify-between items-center mb-2">
-                              <div className="flex items-center space-x-3">
-                                <span className="text-lg font-semibold text-gray-800">
-                                  {candidate.name}
-                                </span>
-                                {winner && candidate.name === winner.name && (
-                                  <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded">
-                                    LEADING
+                      {candidateArray.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <p>No candidates found for this position.</p>
+                        </div>
+                      ) : (
+                        candidateArray.map((candidate, index) => {
+                          const percentage = totalPositionVotes > 0 
+                            ? ((candidate.votes || 0) / totalPositionVotes) * 100 
+                            : 0;
+                          
+                          return (
+                            <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                              <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center space-x-3">
+                                  <span className="text-lg font-semibold text-gray-800">
+                                    {candidate.name || 'Unknown Candidate'}
                                   </span>
-                                )}
+                                  {winner && candidate.name === winner.name && (
+                                    <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded">
+                                      LEADING
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-2xl font-bold text-blue-600">
+                                    {candidate.votes || 0}
+                                  </div>
+                                  <div className="text-sm text-gray-600">
+                                    {percentage.toFixed(1)}%
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-2xl font-bold text-blue-600">
-                                  {candidate.votes}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {percentage.toFixed(1)}%
-                                </div>
+                              
+                              {/* Progress Bar */}
+                              <div className="w-full bg-gray-200 rounded-full h-3">
+                                <div 
+                                  className="bg-blue-600 h-3 rounded-full transition-all duration-500"
+                                  style={{ width: `${percentage}%` }}
+                                ></div>
                               </div>
                             </div>
-                            
-                            {/* Progress Bar */}
-                            <div className="w-full bg-gray-200 rounded-full h-3">
-                              <div 
-                                className="bg-blue-600 h-3 rounded-full transition-all duration-500"
-                                style={{ width: `${percentage}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>
@@ -191,6 +216,11 @@ export default function PublicResults() {
               in the NACOS 2025/2026 election process. Results are automatically calculated and displayed 
               without any manual intervention.
             </p>
+            {resultsData.lastUpdated && (
+              <p className="text-sm text-gray-500 mt-4">
+                Last updated: {new Date(resultsData.lastUpdated).toLocaleString()}
+              </p>
+            )}
           </div>
         </div>
       </div>

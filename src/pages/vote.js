@@ -12,6 +12,8 @@ export default function Vote() {
   const [showNext, setShowNext] = useState(false);
   const [user, setUser] = useState(null);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [ipBlocked, setIpBlocked] = useState(false);
+  const [slideDirection, setSlideDirection] = useState('slide-in'); // 'slide-in' or 'slide-out'
   const router = useRouter();
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export default function Vote() {
     if (userData.remainingPositions && userData.remainingPositions.length > 0) {
       setPositions(userData.remainingPositions);
     } else {
-      fetch('/api/positions')
+      fetch(`/api/positions`)
         .then(res => res.json())
         .then(data => setPositions(data))
         .catch(err => setError('Failed to load positions'));
@@ -39,6 +41,7 @@ export default function Vote() {
     if (currentPosition && user) {
       setCandidates([]);
       setCandidatesLoading(true);
+      setSlideDirection('slide-in');
       
       fetch(`/api/candidates/${encodeURIComponent(currentPosition)}`)
         .then(res => res.json())
@@ -67,10 +70,11 @@ export default function Vote() {
 
     setLoading(true);
     setError('');
+    setIpBlocked(false);
     const position = positions[currentPositionIndex];
 
     try {
-      const res = await fetch('https://nacos-voting-backend-2ml5.onrender.com/api/vote', {
+      const res = await fetch(`/api/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -96,7 +100,10 @@ export default function Vote() {
         localStorage.setItem('user', JSON.stringify(updatedUser));
         setUser(updatedUser);
       } else {
-        if (data.error && data.error.includes('Session expired')) {
+        if (data.ipBlocked) {
+          setIpBlocked(true);
+          setError('This device/network has already been used for voting. Each device can only vote once.');
+        } else if (data.error && data.error.includes('Session expired')) {
           localStorage.removeItem('user');
           router.push('/');
         } else {
@@ -104,7 +111,7 @@ export default function Vote() {
         }
       }
     } catch (err) {
-      setError('Vote submission failed');
+      setError('Vote submission failed. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -112,15 +119,24 @@ export default function Vote() {
 
   const handleNext = () => {
     if (currentPositionIndex < positions.length - 1) {
-      setCurrentPositionIndex(currentPositionIndex + 1);
-      setShowNext(false);
-      setSelectedCandidate('');
-      setError('');
+      setSlideDirection('slide-out');
+      
+      // Wait for slide-out animation to complete before changing position
+      setTimeout(() => {
+        setCurrentPositionIndex(currentPositionIndex + 1);
+        setShowNext(false);
+        setSelectedCandidate('');
+        setError('');
+        setSlideDirection('slide-in');
+      }, 300);
     } else {
       localStorage.removeItem('user');
       router.push('/success');
     }
   };
+
+  // Calculate voted positions count
+  const votedPositionsCount = positions.length - (user?.remainingPositions?.length || positions.length);
 
   const currentPosition = positions[currentPositionIndex];
 
@@ -139,70 +155,149 @@ export default function Vote() {
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
       <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
       
-      <div className="mb-4 text-center">
-        <p className="text-sm text-gray-600">Welcome, {user.fullName}</p>
-        <p className="text-xs text-gray-500">
-          Position {currentPositionIndex + 1} of {positions.length}
-        </p>
-      </div>
-
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">
-        Vote for {currentPosition || 'Loading...'}
-      </h1>
-      
-      <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
-        <p className="text-sm text-gray-600 mb-4">
-          Select your preferred candidate for {currentPosition || 'the position'}.
-        </p>
-        
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-            {error}
-          </div>
-        )}
-        
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Select Candidate</label>
-            <select
-              value={selectedCandidate}
-              onChange={(e) => {
-                setSelectedCandidate(e.target.value);
-                setError('');
-              }}
-              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={showNext || loading || candidatesLoading}
-            >
-              <option value="">
-                {candidatesLoading ? 'Loading candidates...' : 'Choose a candidate'}
-              </option>
-              {candidates.map(candidate => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          {showNext ? (
-            <button
-              onClick={handleNext}
-              className="w-full py-3 rounded-md text-white font-semibold bg-green-600 hover:bg-green-700 transition-all duration-200"
-            >
-              {currentPositionIndex < positions.length - 1 ? 'Next Position' : 'Finish Voting'}
-            </button>
-          ) : (
-            <button
-              onClick={handleVote}
-              disabled={loading || !selectedCandidate || candidates.length === 0}
-              className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 ${
-                loading || !selectedCandidate || candidates.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+      {/* Progress Circles */}
+      <div className="mb-6">
+        <div className="flex justify-center space-x-4">
+          {positions.map((_, index) => (
+            <div
+              key={index}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
+                index < votedPositionsCount
+                  ? 'bg-green-500 text-white'
+                  : index === currentPositionIndex
+                  ? 'bg-blue-500 text-white ring-2 ring-blue-300'
+                  : 'bg-gray-300 text-gray-600'
               }`}
             >
-              {loading ? 'Submitting...' : `Vote for ${currentPosition}`}
-            </button>
-          )}
+              {index < votedPositionsCount ? (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                index + 1
+              )}
+            </div>
+          ))}
         </div>
+        <div className="mt-2 text-center">
+          <p className="text-sm text-gray-600">
+            Position {currentPositionIndex + 1} of {positions.length}
+            {votedPositionsCount > 0 && ` • ${votedPositionsCount} completed`}
+          </p>
+        </div>
+      </div>
+
+      {/* Welcome Message */}
+      <div className="mb-4 text-center">
+        <p className="text-sm text-gray-600">Welcome, {user.fullName}</p>
+        <p className="text-xs text-gray-500">{user.institutionalEmail}</p>
+      </div>
+
+      {/* Sliding Content */}
+      <div className={`w-full max-w-md transition-all duration-300 transform ${
+        slideDirection === 'slide-in' 
+          ? 'translate-x-0 opacity-100' 
+          : '-translate-x-full opacity-0'
+      }`}>
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">
+            Vote for {currentPosition || 'Loading...'}
+          </h1>
+          
+          <p className="text-sm text-gray-600 mb-6 text-center">
+            Select your preferred candidate for {currentPosition || 'the position'}.
+          </p>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              {error}
+            </div>
+          )}
+          
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Candidate
+              </label>
+              <select
+                value={selectedCandidate}
+                onChange={(e) => {
+                  setSelectedCandidate(e.target.value);
+                  setError('');
+                }}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                disabled={showNext || loading || candidatesLoading}
+              >
+                <option value="">
+                  {candidatesLoading ? 'Loading candidates...' : 'Choose a candidate'}
+                </option>
+                {candidates.map(candidate => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {showNext ? (
+              <button
+                onClick={handleNext}
+                className="w-full py-3 rounded-md text-white font-semibold bg-green-600 hover:bg-green-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
+              >
+                <div className="flex items-center justify-center">
+                  <span>
+                    {currentPositionIndex < positions.length - 1 ? 'Next Position' : 'Finish Voting'}
+                  </span>
+                  <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ) : (
+              <button
+                onClick={handleVote}
+                disabled={loading || !selectedCandidate || candidates.length === 0}
+                className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 transform hover:scale-105 ${
+                  loading || !selectedCandidate || candidates.length === 0 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-lg'
+                }`}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Submitting Vote...
+                  </div>
+                ) : (
+                  `Vote for ${currentPosition}`
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mt-6">
+            <div className="flex justify-between text-sm text-gray-600 mb-1">
+              <span>Progress</span>
+              <span>{votedPositionsCount} of {positions.length}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-green-500 h-2 rounded-full transition-all duration-500 ease-out"
+                style={{ 
+                  width: `${(votedPositionsCount / positions.length) * 100}%` 
+                }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Help */}
+      <div className="mt-6 text-center">
+        <p className="text-xs text-gray-500">
+          {positions.length - votedPositionsCount - 1} position(s) remaining after this
+        </p>
       </div>
     </div>
   );
