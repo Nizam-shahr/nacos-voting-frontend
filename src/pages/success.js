@@ -20,12 +20,7 @@ export default function Success() {
         </p>
         
         <div className="space-y-4">
-          <button
-            onClick={() => router.push('/votes-table')}
-            className="w-full py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-200 font-semibold"
-          >
-            View Live Votes Table
-          </button>
+         
           
           <button
             onClick={() => router.push('/results')}
