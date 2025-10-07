@@ -32,28 +32,6 @@ export default function PublicVotesTable() {
     }
   };
 
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'N/A';
-    
-    // Handle Firebase Timestamp
-    if (timestamp.toDate) {
-      const date = timestamp.toDate();
-      return date.toLocaleString();
-    }
-    
-    // Handle string timestamp
-    if (typeof timestamp === 'string') {
-      return new Date(timestamp).toLocaleString();
-    }
-    
-    // Handle number timestamp
-    if (typeof timestamp === 'number') {
-      return new Date(timestamp).toLocaleString();
-    }
-    
-    return 'Invalid Date';
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
@@ -162,7 +140,7 @@ export default function PublicVotesTable() {
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-800 border-t">
                         <div className="font-mono text-xs bg-gray-100 p-1 rounded">
-                          {vote.userInstitutionalEmail || vote.userEmail || 'N/A'}
+                          {vote.userInstitutionalEmail || 'N/A'}
                         </div>
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-800 border-t">
@@ -174,16 +152,10 @@ export default function PublicVotesTable() {
                         {vote.candidateName || 'Unknown Candidate'}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                        {formatTimestamp(vote.timestamp)}
+                        {vote.timestamp || 'N/A'}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-800 border-t font-mono text-xs">
-                        {vote.timestamp ? 
-                          (vote.timestamp.toDate ? 
-                            vote.timestamp.toDate().toISOString() : 
-                            String(vote.timestamp)
-                          ) : 
-                          'N/A'
-                        }
+                        {vote.rawTimestamp || 'N/A'}
                       </td>
                     </tr>
                   ))

@@ -1,180 +1,205 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 
-export default function PublicVotesTable() {
-  const [votesData, setVotesData] = useState({ 
-    votes: [], 
-    totalVotes: 0, 
-    lastUpdated: '' 
-  });
-  const [loading, setLoading] = useState(true);
+export default function Home() {
+  const [institutionalEmail, setInstitutionalEmail] = useState('');
+  const [personalEmail, setPersonalEmail] = useState('');
+  const [matricNumber, setMatricNumber] = useState('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [alreadyVoted, setAlreadyVoted] = useState(false);
+  const [ipBlocked, setIpBlocked] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    fetchVotes();
-  }, []);
-
-  const fetchVotes = async () => {
-    try {
-      const res = await fetch(`/api/dev/votes-table`);
-      const data = await res.json();
-      if (res.ok) {
-        setVotesData(data);
-      } else {
-        setError(data.error);
-      }
-    } catch (err) {
-      setError('Failed to fetch votes');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-        <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading votes table...</p>
-        </div>
-      </div>
-    );
+  const handleSignIn = async () => {
+  setLoading(true);
+  setError('');
+  setAlreadyVoted(false);
+  setIpBlocked(false);
+  
+  if (!fullName.trim() || !personalEmail.trim() || !institutionalEmail.trim() || !matricNumber.trim()) {
+    setError('Please fill in all required fields');
+    setLoading(false);
+    return;
   }
 
+  const nameParts = fullName.trim().split(' ').filter(part => part.length > 1);
+  if (nameParts.length < 2) {
+    setError('Please enter your complete first and last name');
+    setLoading(false);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/sign-in`, {  // Direct URL
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        institutionalEmail, 
+        personalEmail, 
+        matricNumber, 
+        fullName 
+      }),
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok) {
+      if (data.alreadyVoted) {
+        setAlreadyVoted(true);
+        setError('You have already completed voting for all positions.');
+      } else {
+        localStorage.setItem('user', JSON.stringify({ 
+          institutionalEmail, 
+          personalEmail: data.personalEmail,
+          matricNumber,
+          fullName: data.fullName,
+          sessionToken: data.sessionToken,
+          remainingPositions: data.remainingPositions 
+        }));
+        router.push('/vote');
+      }
+    } else {
+      if (data.ipBlocked) {
+        setIpBlocked(true);
+        setError('This device/network has already been used for voting. Each device can only vote once.');
+      } else {
+        setError(data.error || 'Sign-in failed');
+      }
+    }
+  } catch (err) {
+    setError('Sign-in failed. Please check your connection.');
+  } finally {
+    setLoading(false);
+  }
+};
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={64} height={64} />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">Voting Activity Log</h1>
-                <p className="text-gray-600">Detailed voting records - NACOS 2025/2026 Election</p>
-                {votesData.lastUpdated && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    Last updated: {new Date(votesData.lastUpdated).toLocaleString()}
-                  </p>
-                )}
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+      <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
+      <h1 className="text-2xl font-bold text-gray-800 mb-4">Welcome to NACOS 2025/2026 Election</h1>
+      
+      <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">Secure Sign In to Vote</h2>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
+          <p className="text-sm text-blue-800">
+            <strong>Note:</strong> All fields are required for verification purposes.
+          </p>
+        </div>
+
+        {error && (
+          <div className={`mb-4 p-3 rounded-md ${
+            alreadyVoted ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'
+          }`}>
+            {error}
+            {alreadyVoted && (
+              <div className="mt-2">
+                <button
+                  onClick={() => router.push('/results')}
+                  className="bg-green-600 text-white py-1 px-3 rounded text-sm hover:bg-green-700"
+                >
+                  View Results
+                </button>
               </div>
-            </div>
-            <div className="mt-4 md:mt-0 text-center">
-              <div className="bg-blue-100 text-blue-800 py-2 px-4 rounded-lg">
-                <p className="text-sm font-semibold">Total Votes Cast</p>
-                <p className="text-2xl font-bold">{votesData.totalVotes}</p>
-              </div>
-            </div>
+            )}
           </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
+              Full Name *
+            </label>
+            <input
+              type="text"
+              id="fullName"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="John Doe"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Enter your complete first and last name</p>
+          </div>
+
+          <div>
+            <label htmlFor="institutionalEmail" className="block text-sm font-medium text-gray-700">
+              Institutional Email *
+            </label>
+            <input
+              type="email"
+              id="institutionalEmail"
+              value={institutionalEmail}
+              onChange={(e) => setInstitutionalEmail(e.target.value)}
+              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="2203sen001@alhikmah.edu.ng"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Format: 2203sen001@alhikmah.edu.ng</p>
+          </div>
+
+          <div>
+            <label htmlFor="personalEmail" className="block text-sm font-medium text-gray-700">
+              Personal Email *
+            </label>
+            <input
+              type="email"
+              id="personalEmail"
+              value={personalEmail}
+              onChange={(e) => setPersonalEmail(e.target.value)}
+              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="your.email@gmail.com"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Your active personal email address</p>
+          </div>
+          
+          <div>
+            <label htmlFor="matricNumber" className="block text-sm font-medium text-gray-700">
+              Matric Number *
+            </label>
+            <input
+              type="text"
+              id="matricNumber"
+              value={matricNumber}
+              onChange={(e) => setMatricNumber(e.target.value)}
+              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="22/03sen001"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Format: 22/03sen001</p>
+          </div>
+          
+          <button
+            onClick={handleSignIn}
+            disabled={loading || alreadyVoted}
+            className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 ${
+              loading || alreadyVoted ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            {loading ? 'Verifying...' : alreadyVoted ? 'Already Voted' : 'Sign In to Vote'}
+          </button>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <p className="text-sm text-gray-600 text-center">
+            Having issues? Contact NACOS Electoral Committee
+          </p>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="flex flex-wrap gap-4">
-          <button
-            onClick={() => router.push('/results')}
-            className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
-          >
-            View Results Summary
-          </button>
-          <button
-            onClick={() => router.push('/')}
-            className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
-          >
-            Back to Home
-          </button>
-          <button
-            onClick={fetchVotes}
-            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors flex items-center"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Votes Table */}
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white">
-              <thead className="bg-gray-800 text-white">
-                <tr>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">#</th>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">Voter Email</th>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">Position</th>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">Candidate Voted For</th>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">Vote Timestamp</th>
-                  <th className="py-3 px-4 text-left text-sm font-semibold">Raw Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                {votesData.votes && votesData.votes.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="py-8 px-4 text-center text-gray-500">
-                      <div className="text-4xl mb-2">🗳️</div>
-                      <p className="text-lg font-medium">No votes recorded yet</p>
-                      <p className="text-sm mt-2">Be the first to vote!</p>
-                    </td>
-                  </tr>
-                ) : (
-                  votesData.votes && votesData.votes.map((vote, index) => (
-                    <tr 
-                      key={vote.id} 
-                      className={index % 2 === 0 ? 'bg-gray-50 hover:bg-gray-100' : 'bg-white hover:bg-gray-100'}
-                    >
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
-                        {index + 1}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                        <div className="font-mono text-xs bg-gray-100 p-1 rounded">
-                          {vote.userInstitutionalEmail || 'N/A'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                        <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-medium">
-                          {vote.position}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
-                        {vote.candidateName || 'Unknown Candidate'}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                        {vote.timestamp || 'N/A'}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800 border-t font-mono text-xs">
-                        {vote.rawTimestamp || 'N/A'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-600">
-            <div>
-              Showing <span className="font-semibold">{votesData.votes ? votesData.votes.length : 0}</span> vote{votesData.votes && votesData.votes.length !== 1 ? 's' : ''}
-            </div>
-            <div className="mt-2 sm:mt-0">
-              <span className="bg-green-100 text-green-800 py-1 px-2 rounded text-xs">
-                Live Data
-              </span>
-            </div>
-          </div>
-        </div>
+      {/* Public Results Link */}
+      <div className="mt-8 text-center">
+        <p className="text-gray-600 mb-4">Want to see live election results?</p>
+        <button
+          onClick={() => router.push('/results')}
+          className="bg-green-600 text-white py-3 px-6 rounded-md hover:bg-green-700 transition-all duration-200"
+        >
+          View Live Results
+        </button>
       </div>
     </div>
   );
