@@ -1,205 +1,148 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import Fingerprint2 from 'fingerprintjs2';
 
-export default function Home() {
-  const [institutionalEmail, setInstitutionalEmail] = useState('');
-  const [personalEmail, setPersonalEmail] = useState('');
-  const [matricNumber, setMatricNumber] = useState('');
-  const [fullName, setFullName] = useState('');
+export default function SignIn() {
+  const [formData, setFormData] = useState({
+    institutionalEmail: '',
+    personalEmail: '',
+    matricNumber: '',
+    fullName: ''
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [alreadyVoted, setAlreadyVoted] = useState(false);
-  const [ipBlocked, setIpBlocked] = useState(false);
+  const [deviceId, setDeviceId] = useState(null);
   const router = useRouter();
 
-  const handleSignIn = async () => {
-  setLoading(true);
-  setError('');
-  setAlreadyVoted(false);
-  setIpBlocked(false);
-  
-  if (!fullName.trim() || !personalEmail.trim() || !institutionalEmail.trim() || !matricNumber.trim()) {
-    setError('Please fill in all required fields');
-    setLoading(false);
-    return;
-  }
-
-  const nameParts = fullName.trim().split(' ').filter(part => part.length > 1);
-  if (nameParts.length < 2) {
-    setError('Please enter your complete first and last name');
-    setLoading(false);
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/sign-in`, {  // Direct URL
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        institutionalEmail, 
-        personalEmail, 
-        matricNumber, 
-        fullName 
-      }),
+  useEffect(() => {
+    // Generate device ID
+    Fingerprint2.get((components) => {
+      const deviceId = Fingerprint2.x64hash128(components.map((pair) => pair.value).join(), 31);
+      setDeviceId(deviceId);
+      console.log('Device ID:', deviceId);
     });
-    
-    const data = await res.json();
-    
-    if (res.ok) {
-      if (data.alreadyVoted) {
-        setAlreadyVoted(true);
-        setError('You have already completed voting for all positions.');
-      } else {
-        localStorage.setItem('user', JSON.stringify({ 
-          institutionalEmail, 
+  }, []);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!deviceId) {
+      setError('Device identification failed. Please try again.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formData, deviceId })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        localStorage.setItem('user', JSON.stringify({
+          institutionalEmail: data.institutionalEmail,
           personalEmail: data.personalEmail,
-          matricNumber,
+          matricNumber: data.matricNumber,
           fullName: data.fullName,
-          sessionToken: data.sessionToken,
-          remainingPositions: data.remainingPositions 
+          sessionToken: data.sessionToken
         }));
         router.push('/vote');
-      }
-    } else {
-      if (data.ipBlocked) {
-        setIpBlocked(true);
-        setError('This device/network has already been used for voting. Each device can only vote once.');
       } else {
-        setError(data.error || 'Sign-in failed');
+        setError(data.error || 'Failed to sign in');
       }
+    } catch (err) {
+      setError('Failed to sign in');
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    setError('Sign-in failed. Please check your connection.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
       <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">Welcome to NACOS 2025/2026 Election</h1>
-      
-      <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Secure Sign In to Vote</h2>
-        
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
-          <p className="text-sm text-blue-800">
-            <strong>Note:</strong> All fields are required for verification purposes.
-          </p>
-        </div>
-
+      <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">NACOS Election Sign In</h1>
         {error && (
-          <div className={`mb-4 p-3 rounded-md ${
-            alreadyVoted ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'
-          }`}>
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
             {error}
-            {alreadyVoted && (
-              <div className="mt-2">
-                <button
-                  onClick={() => router.push('/results')}
-                  className="bg-green-600 text-white py-1 px-3 rounded text-sm hover:bg-green-700"
-                >
-                  View Results
-                </button>
-              </div>
-            )}
           </div>
         )}
-
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              id="fullName"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="John Doe"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">Enter your complete first and last name</p>
-          </div>
-
-          <div>
-            <label htmlFor="institutionalEmail" className="block text-sm font-medium text-gray-700">
-              Institutional Email *
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2" htmlFor="institutionalEmail">
+              Institutional Email
             </label>
             <input
               type="email"
-              id="institutionalEmail"
-              value={institutionalEmail}
-              onChange={(e) => setInstitutionalEmail(e.target.value)}
-              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              name="institutionalEmail"
+              value={formData.institutionalEmail}
+              onChange={handleChange}
+              className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
               placeholder="2203sen001@alhikmah.edu.ng"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Format: 2203sen001@alhikmah.edu.ng</p>
           </div>
-
-          <div>
-            <label htmlFor="personalEmail" className="block text-sm font-medium text-gray-700">
-              Personal Email *
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2" htmlFor="personalEmail">
+              Personal Email
             </label>
             <input
               type="email"
-              id="personalEmail"
-              value={personalEmail}
-              onChange={(e) => setPersonalEmail(e.target.value)}
-              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="your.email@gmail.com"
+              name="personalEmail"
+              value={formData.personalEmail}
+              onChange={handleChange}
+              className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+              placeholder="example@gmail.com"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Your active personal email address</p>
           </div>
-          
-          <div>
-            <label htmlFor="matricNumber" className="block text-sm font-medium text-gray-700">
-              Matric Number *
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2" htmlFor="matricNumber">
+              Matric Number
             </label>
             <input
               type="text"
-              id="matricNumber"
-              value={matricNumber}
-              onChange={(e) => setMatricNumber(e.target.value)}
-              className="mt-1 w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              name="matricNumber"
+              value={formData.matricNumber}
+              onChange={handleChange}
+              className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
               placeholder="22/03sen001"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Format: 22/03sen001</p>
           </div>
-          
+          <div className="mb-6">
+            <label className="block text-gray-700 mb-2" htmlFor="fullName">
+              Full Name
+            </label>
+            <input
+              type="text"
+              name="fullName"
+              value={formData.fullName}
+              onChange={handleChange}
+              className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+              placeholder="John Doe"
+              required
+            />
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            This application uses device fingerprinting to ensure voting integrity. Your device information is used solely for this purpose.
+          </p>
           <button
-            onClick={handleSignIn}
-            disabled={loading || alreadyVoted}
-            className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 ${
-              loading || alreadyVoted ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+            type="submit"
+            disabled={loading || !deviceId}
+            className={`w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors ${
+              loading || !deviceId ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
-            {loading ? 'Verifying...' : alreadyVoted ? 'Already Voted' : 'Sign In to Vote'}
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
-        </div>
-
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <p className="text-sm text-gray-600 text-center">
-            Having issues? Contact NACOS Electoral Committee
-          </p>
-        </div>
-      </div>
-
-      {/* Public Results Link */}
-      <div className="mt-8 text-center">
-        <p className="text-gray-600 mb-4">Want to see live election results?</p>
-        <button
-          onClick={() => router.push('/results')}
-          className="bg-green-600 text-white py-3 px-6 rounded-md hover:bg-green-700 transition-all duration-200"
-        >
-          View Live Results
-        </button>
+        </form>
       </div>
     </div>
   );

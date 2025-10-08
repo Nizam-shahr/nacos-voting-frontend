@@ -1,100 +1,109 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import Fingerprint2 from 'fingerprintjs2';
 
 export default function Vote() {
+  const [user, setUser] = useState(null);
   const [positions, setPositions] = useState([]);
-  const [currentPositionIndex, setCurrentPositionIndex] = useState(0);
   const [candidates, setCandidates] = useState([]);
-  const [selectedCandidate, setSelectedCandidate] = useState('');
+  const [currentPositionIndex, setCurrentPositionIndex] = useState(0);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [tempVotes, setTempVotes] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showNext, setShowNext] = useState(false);
-  const [user, setUser] = useState(null);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [completingVoting, setCompletingVoting] = useState(false);
-  const [tempVotes, setTempVotes] = useState({});
+  const [showNext, setShowNext] = useState(false);
+  const [sessionTimer, setSessionTimer] = useState(900); // 15 minutes in seconds
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [deviceId, setDeviceId] = useState(null);
   const [slideDirection, setSlideDirection] = useState('slide-in');
   const router = useRouter();
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    
-    if (!userData.institutionalEmail || !userData.sessionToken) {
+    // Generate device ID
+    Fingerprint2.get((components) => {
+      const deviceId = Fingerprint2.x64hash128(components.map((pair) => pair.value).join(), 31);
+      setDeviceId(deviceId);
+      console.log('Device ID:', deviceId);
+    });
+
+    // Load user from localStorage
+    const storedUser = JSON.parse(localStorage.getItem('user'));
+    if (!storedUser) {
       router.push('/');
       return;
     }
-    setUser(userData);
-    
-    if (userData.remainingPositions && userData.remainingPositions.length > 0) {
-      setPositions(userData.remainingPositions);
-    } else {
-      fetch('/api/positions')
-        .then(res => res.json())
-        .then(data => setPositions(data))
-        .catch(err => setError('Failed to load positions'));
-    }
+    setUser(storedUser);
 
-    // Load temp votes from localStorage
-    const savedTempVotes = localStorage.getItem('tempVotes');
-    if (savedTempVotes) {
-      setTempVotes(JSON.parse(savedTempVotes));
-    }
+    // Load positions
+    fetchPositions();
   }, [router]);
 
   useEffect(() => {
-    const currentPosition = positions[currentPositionIndex];
-    
-    if (currentPosition && user) {
-      setCandidates([]);
-      setCandidatesLoading(true);
-      setSlideDirection('slide-in');
-      
-      fetch(`/api/candidates/${encodeURIComponent(currentPosition)}`)
-        .then(res => res.json())
-        .then(data => {
-          setCandidates(data);
-          setCandidatesLoading(false);
-        })
-        .catch(err => {
-          setError('Failed to load candidates');
-          setCandidatesLoading(false);
-        });
-    }
-  }, [positions, currentPositionIndex, user]);
+    // Start timer
+    const timer = setInterval(() => {
+      setSessionTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setSessionExpired(true);
+          setError('Voting session has expired. Please sign in again.');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-  const storeTempVote = (position, candidateId, candidateName) => {
-    const newTempVotes = { ...tempVotes, [position]: { candidateId, candidateName } };
-    setTempVotes(newTempVotes);
-    localStorage.setItem('tempVotes', JSON.stringify(newTempVotes));
-    return true;
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (user && positions.length > 0 && currentPositionIndex < positions.length) {
+      fetchCandidates(positions[currentPositionIndex]);
+    }
+  }, [user, positions, currentPositionIndex]);
+
+  const fetchPositions = async () => {
+    try {
+      const res = await fetch('/api/positions');
+      const data = await res.json();
+      if (res.ok) {
+        const storedTempVotes = JSON.parse(localStorage.getItem('tempVotes') || '{}');
+        const remainingPositions = data.filter(pos => !storedTempVotes[pos]);
+        setPositions(remainingPositions);
+        setTempVotes(storedTempVotes);
+      } else {
+        setError(data.error || 'Failed to load positions');
+      }
+    } catch (err) {
+      setError('Failed to fetch positions');
+    }
+  };
+
+  const fetchCandidates = async (position) => {
+    setCandidatesLoading(true);
+    try {
+      const res = await fetch(`/api/candidates/${encodeURIComponent(position)}`);
+      const data = await res.json();
+      if (res.ok) {
+        setCandidates(data);
+      } else {
+        setError(data.error || 'Failed to load candidates');
+      }
+    } catch (err) {
+      setError('Failed to fetch candidates');
+    } finally {
+      setCandidatesLoading(false);
+    }
   };
 
   const handleVote = async () => {
-    if (!user) {
-      setError('Session expired. Please sign in again.');
-      router.push('/');
-      return;
-    }
-
-    if (!selectedCandidate) {
-      setError('Please select a candidate');
-      return;
-    }
+    if (!selectedCandidate || sessionExpired) return;
 
     setLoading(true);
-    setError('');
-    const position = positions[currentPositionIndex];
-    const candidate = candidates.find(c => c.id === selectedCandidate);
-
-    if (!candidate) {
-      setError('Invalid candidate selected');
-      setLoading(false);
-      return;
-    }
-
-    // Store vote in backend
     try {
+      console.log('Submitting vote:', { institutionalEmail: user.institutionalEmail, candidateId: selectedCandidate, position: positions[currentPositionIndex], deviceId });
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,17 +111,26 @@ export default function Vote() {
           institutionalEmail: user.institutionalEmail,
           sessionToken: user.sessionToken,
           candidateId: selectedCandidate,
-          position
+          position: positions[currentPositionIndex],
+          deviceId
         })
       });
-      
+      const data = await res.json();
+      console.log('Vote response:', data);
+
       if (res.ok) {
-        // Store in local storage
-        storeTempVote(position, selectedCandidate, candidate.name);
+        const candidate = candidates.find(c => c.id === selectedCandidate);
+        const newTempVotes = {
+          ...tempVotes,
+          [positions[currentPositionIndex]]: {
+            candidateId: selectedCandidate,
+            candidateName: candidate.name
+          }
+        };
+        setTempVotes(newTempVotes);
+        localStorage.setItem('tempVotes', JSON.stringify(newTempVotes));
         setShowNext(true);
-        setSelectedCandidate('');
       } else {
-        const data = await res.json();
         setError(data.error || 'Failed to submit vote');
       }
     } catch (err) {
@@ -122,260 +140,191 @@ export default function Vote() {
     }
   };
 
-  const finalizeAllVotes = async () => {
-    if (!user) {
-      setError('Session expired. Please sign in again.');
-      router.push('/');
-      return;
-    }
+  const handleNextPosition = () => {
+    setSlideDirection('slide-out');
+    setTimeout(() => {
+      setCurrentPositionIndex(currentPositionIndex + 1);
+      setSelectedCandidate(null);
+      setShowNext(false);
+      setSlideDirection('slide-in');
+    }, 300);
+  };
 
+  const handleCompleteVoting = async () => {
     setCompletingVoting(true);
-    setError('');
-
     try {
       const res = await fetch('/api/complete-voting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           institutionalEmail: user.institutionalEmail,
-          sessionToken: user.sessionToken
+          sessionToken: user.sessionToken,
+          deviceId
         })
       });
-      
       const data = await res.json();
-      
+
       if (res.ok) {
-        // Success - clear local storage and redirect to success page
-        localStorage.removeItem('user');
         localStorage.removeItem('tempVotes');
+        localStorage.removeItem('user');
         router.push('/success');
       } else {
-        if (data.duplicateIP) {
-          setError(data.error);
-          setTimeout(() => {
-            localStorage.removeItem('user');
-            localStorage.removeItem('tempVotes');
-            router.push('/');
-          }, 3000);
-        } else {
-          setError(data.error || 'Failed to complete voting');
-        }
+        setError(data.error || 'Failed to complete voting');
       }
     } catch (err) {
-      setError('Failed to complete voting. Please check your connection.');
+      setError('Failed to complete voting');
     } finally {
       setCompletingVoting(false);
     }
   };
 
-  const handleNext = () => {
-    if (currentPositionIndex < positions.length - 1) {
-      setSlideDirection('slide-out');
-      
-      setTimeout(() => {
-        setCurrentPositionIndex(currentPositionIndex + 1);
-        setShowNext(false);
-        setSelectedCandidate('');
-        setError('');
-        setSlideDirection('slide-in');
-      }, 300);
-    } else {
-      // Last position completed - finalize all votes
-      finalizeAllVotes();
-    }
-  };
-
-  // Calculate voted positions count
-  const votedPositionsCount = Object.keys(tempVotes).length;
-
-  const currentPosition = positions[currentPositionIndex];
-
-  if (!user) {
+  if (!user || sessionExpired) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+        <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md w-full">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            {sessionExpired ? 'Session Expired' : 'Please Sign In'}
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {sessionExpired ? 'Your voting session has expired. Please sign in again.' : 'You need to sign in to vote.'}
+          </p>
+          <button
+            onClick={() => router.push('/')}
+            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Go to Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (positions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+        <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
+        <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md w-full">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">No Positions Available</h2>
+          <p className="text-gray-600 mb-6">You have already voted for all positions or no positions are available.</p>
+          <button
+            onClick={() => router.push('/')}
+            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Back to Home
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={128} height={128} className="mb-4" />
-      
-      {/* Progress Circles */}
-      <div className="mb-6">
-        <div className="flex justify-center space-x-4">
-          {positions.map((position, index) => (
-            <div
-              key={index}
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
-                tempVotes[position]
-                  ? 'bg-green-500 text-white'
-                  : index === currentPositionIndex
-                  ? 'bg-blue-500 text-white ring-2 ring-blue-300'
-                  : 'bg-gray-300 text-gray-600'
-              }`}
-            >
-              {tempVotes[position] ? (
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                index + 1
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 text-center">
-          <p className="text-sm text-gray-600">
-            Position {currentPositionIndex + 1} of {positions.length}
-            {votedPositionsCount > 0 && ` • ${votedPositionsCount} completed`}
-          </p>
-        </div>
-      </div>
-
-      {/* Welcome Message */}
-      <div className="mb-4 text-center">
-        <p className="text-sm text-gray-600">Welcome, {user.fullName}</p>
-        <p className="text-xs text-gray-500">{user.institutionalEmail}</p>
-      </div>
-
-      {/* Sliding Content */}
-      <div className={`w-full max-w-md transition-all duration-300 transform ${
-        slideDirection === 'slide-in' 
-          ? 'translate-x-0 opacity-100' 
-          : '-translate-x-full opacity-0'
-      }`}>
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">
-            Vote for {currentPosition || 'Loading...'}
-          </h1>
-          
-          <p className="text-sm text-gray-600 mb-6 text-center">
-            Select your preferred candidate for {currentPosition || 'the position'}.
-          </p>
-          
-          {error && (
-            <div className={`mb-4 p-3 rounded ${
-              error.includes('already been used') || error.includes('IP address')
-                ? 'bg-red-100 border border-red-400 text-red-700' 
-                : 'bg-red-100 border border-red-400 text-red-700'
-            }`}>
-              {error}
-              {(error.includes('already been used') || error.includes('IP address')) && (
-                <p className="text-sm mt-2">
-                  Redirecting to home page...
-                </p>
-              )}
-            </div>
-          )}
-          
-          <div className="space-y-6">
+    <div className="min-h-screen bg-gray-100">
+      <div className="bg-white shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 py-6 flex flex-col md:flex-row justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={64} height={64} />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Candidate
-              </label>
-              <select
-                value={selectedCandidate}
-                onChange={(e) => {
-                  setSelectedCandidate(e.target.value);
-                  setError('');
-                }}
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                disabled={showNext || loading || candidatesLoading || completingVoting}
-              >
-                <option value="">
-                  {candidatesLoading ? 'Loading candidates...' : 'Choose a candidate'}
-                </option>
-                {candidates.map(candidate => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name}
-                  </option>
-                ))}
-              </select>
+              <h1 className="text-2xl font-bold text-gray-800">NACOS 2025/2026 Election</h1>
+              <p className="text-gray-600">Cast your vote for {positions[currentPositionIndex]}</p>
             </div>
-            
+          </div>
+          <div className="mt-4 md:mt-0 text-center">
+            <p className="text-sm font-semibold text-gray-600">Time left: {Math.floor(sessionTimer / 60)}:{sessionTimer % 60 < 10 ? '0' + sessionTimer % 60 : sessionTimer % 60}</p>
+            <p className="text-sm text-gray-500">Position {currentPositionIndex + 1} of {positions.length}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto p-4">
+        {error && (
+          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <div className={`transition-all duration-300 ${slideDirection}`}>
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Select a candidate for {positions[currentPositionIndex]}
+            </h2>
+            {candidatesLoading ? (
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading candidates...</p>
+              </div>
+            ) : candidates.length === 0 ? (
+              <p className="text-gray-600">No candidates available for this position.</p>
+            ) : (
+              <div className="grid gap-4">
+                {candidates.map((candidate) => (
+                  <div
+                    key={candidate.id}
+                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                      selectedCandidate === candidate.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                    onClick={() => setSelectedCandidate(candidate.id)}
+                  >
+                    <div className="flex items-center space-x-4">
+                      <Image
+                        src={candidate.image || '/images/placeholder.jpg'}
+                        alt={candidate.name}
+                        width={64}
+                        height={64}
+                        className="rounded-full"
+                      />
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800">{candidate.name}</h3>
+                        <p className="text-gray-600">{candidate.description || 'No description available'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={() => router.push('/')}
+            className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
+          >
+            Back to Home
+          </button>
+          <div>
             {showNext ? (
-              <button
-                onClick={handleNext}
-                disabled={completingVoting}
-                className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg ${
-                  completingVoting 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-green-600 hover:bg-green-700'
-                }`}
-              >
-                {completingVoting ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Finalizing Votes...
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center">
-                    <span>
-                      {currentPositionIndex < positions.length - 1 ? 'Next Position' : 'Finish Voting'}
-                    </span>
-                    <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                )}
-              </button>
+              currentPositionIndex < positions.length - 1 ? (
+                <button
+                  onClick={handleNextPosition}
+                  className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Next Position
+                </button>
+              ) : (
+                <button
+                  onClick={handleCompleteVoting}
+                  disabled={completingVoting || sessionExpired}
+                  className={`bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors ${
+                    completingVoting || sessionExpired ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {completingVoting ? 'Completing...' : 'Complete Voting'}
+                </button>
+              )
             ) : (
               <button
                 onClick={handleVote}
-                disabled={loading || !selectedCandidate || candidates.length === 0 || completingVoting}
-                className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 transform hover:scale-105 ${
-                  loading || !selectedCandidate || candidates.length === 0 || completingVoting
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-700 shadow-lg'
+                disabled={!selectedCandidate || loading || candidatesLoading || sessionExpired}
+                className={`bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors ${
+                  !selectedCandidate || loading || candidatesLoading || sessionExpired ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Storing Vote...
-                  </div>
-                ) : (
-                  `Vote for ${currentPosition}`
-                )}
+                {loading ? 'Submitting...' : 'Submit Vote'}
               </button>
             )}
           </div>
-
-          {/* Progress Bar */}
-          <div className="mt-6">
-            <div className="flex justify-between text-sm text-gray-600 mb-1">
-              <span>Progress</span>
-              <span>{votedPositionsCount} of {positions.length}</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-green-500 h-2 rounded-full transition-all duration-500 ease-out"
-                style={{ 
-                  width: `${(votedPositionsCount / positions.length) * 100}%` 
-                }}
-              ></div>
-            </div>
-          </div>
-
-          {/* Session Info */}
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-800 text-center">
-              <strong>Session Voting:</strong> Your votes are stored temporarily. They will be finalized when you complete all positions.
-            </p>
-          </div>
         </div>
-      </div>
-
-      {/* Navigation Help */}
-      <div className="mt-6 text-center">
-        <p className="text-xs text-gray-500">
-          {positions.length - votedPositionsCount - 1} position(s) remaining after this
-        </p>
       </div>
     </div>
   );
