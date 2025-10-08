@@ -12,8 +12,9 @@ export default function Vote() {
   const [showNext, setShowNext] = useState(false);
   const [user, setUser] = useState(null);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
-  const [ipBlocked, setIpBlocked] = useState(false);
-  const [slideDirection, setSlideDirection] = useState('slide-in'); // 'slide-in' or 'slide-out'
+  const [completingVoting, setCompletingVoting] = useState(false);
+  const [tempVotes, setTempVotes] = useState({});
+  const [slideDirection, setSlideDirection] = useState('slide-in');
   const router = useRouter();
 
   useEffect(() => {
@@ -24,14 +25,20 @@ export default function Vote() {
       return;
     }
     setUser(userData);
-
+    
     if (userData.remainingPositions && userData.remainingPositions.length > 0) {
       setPositions(userData.remainingPositions);
     } else {
-      fetch(`/api/positions`)
+      fetch('/api/positions')
         .then(res => res.json())
         .then(data => setPositions(data))
         .catch(err => setError('Failed to load positions'));
+    }
+
+    // Load temp votes from localStorage
+    const savedTempVotes = localStorage.getItem('tempVotes');
+    if (savedTempVotes) {
+      setTempVotes(JSON.parse(savedTempVotes));
     }
   }, [router]);
 
@@ -56,6 +63,13 @@ export default function Vote() {
     }
   }, [positions, currentPositionIndex, user]);
 
+  const storeTempVote = (position, candidateId, candidateName) => {
+    const newTempVotes = { ...tempVotes, [position]: { candidateId, candidateName } };
+    setTempVotes(newTempVotes);
+    localStorage.setItem('tempVotes', JSON.stringify(newTempVotes));
+    return true;
+  };
+
   const handleVote = async () => {
     if (!user) {
       setError('Session expired. Please sign in again.');
@@ -70,50 +84,87 @@ export default function Vote() {
 
     setLoading(true);
     setError('');
-    setIpBlocked(false);
     const position = positions[currentPositionIndex];
+    const candidate = candidates.find(c => c.id === selectedCandidate);
 
+    if (!candidate) {
+      setError('Invalid candidate selected');
+      setLoading(false);
+      return;
+    }
+
+    // Store vote in backend
     try {
-      const res = await fetch(`/api/vote`, {
+      const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           institutionalEmail: user.institutionalEmail,
           sessionToken: user.sessionToken,
           candidateId: selectedCandidate,
-          position: position
-        }),
+          position
+        })
+      });
+      
+      if (res.ok) {
+        // Store in local storage
+        storeTempVote(position, selectedCandidate, candidate.name);
+        setShowNext(true);
+        setSelectedCandidate('');
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Failed to submit vote');
+      }
+    } catch (err) {
+      setError('Failed to submit vote');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const finalizeAllVotes = async () => {
+    if (!user) {
+      setError('Session expired. Please sign in again.');
+      router.push('/');
+      return;
+    }
+
+    setCompletingVoting(true);
+    setError('');
+
+    try {
+      const res = await fetch('/api/complete-voting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          institutionalEmail: user.institutionalEmail,
+          sessionToken: user.sessionToken
+        })
       });
       
       const data = await res.json();
       
       if (res.ok) {
-        setShowNext(true);
-        setSelectedCandidate('');
-        
-        const updatedUser = {
-          ...user,
-          remainingPositions: user.remainingPositions ? 
-            user.remainingPositions.filter(pos => pos !== position) : 
-            positions.filter(pos => pos !== position)
-        };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-        setUser(updatedUser);
+        // Success - clear local storage and redirect to success page
+        localStorage.removeItem('user');
+        localStorage.removeItem('tempVotes');
+        router.push('/success');
       } else {
-        if (data.ipBlocked) {
-          setIpBlocked(true);
-          setError('This device/network has already been used for voting. Each device can only vote once.');
-        } else if (data.error && data.error.includes('Session expired')) {
-          localStorage.removeItem('user');
-          router.push('/');
+        if (data.duplicateIP) {
+          setError(data.error);
+          setTimeout(() => {
+            localStorage.removeItem('user');
+            localStorage.removeItem('tempVotes');
+            router.push('/');
+          }, 3000);
         } else {
-          setError(data.error || 'Vote submission failed');
+          setError(data.error || 'Failed to complete voting');
         }
       }
     } catch (err) {
-      setError('Vote submission failed. Please check your connection.');
+      setError('Failed to complete voting. Please check your connection.');
     } finally {
-      setLoading(false);
+      setCompletingVoting(false);
     }
   };
 
@@ -121,7 +172,6 @@ export default function Vote() {
     if (currentPositionIndex < positions.length - 1) {
       setSlideDirection('slide-out');
       
-      // Wait for slide-out animation to complete before changing position
       setTimeout(() => {
         setCurrentPositionIndex(currentPositionIndex + 1);
         setShowNext(false);
@@ -130,13 +180,13 @@ export default function Vote() {
         setSlideDirection('slide-in');
       }, 300);
     } else {
-      localStorage.removeItem('user');
-      router.push('/success');
+      // Last position completed - finalize all votes
+      finalizeAllVotes();
     }
   };
 
   // Calculate voted positions count
-  const votedPositionsCount = positions.length - (user?.remainingPositions?.length || positions.length);
+  const votedPositionsCount = Object.keys(tempVotes).length;
 
   const currentPosition = positions[currentPositionIndex];
 
@@ -158,18 +208,18 @@ export default function Vote() {
       {/* Progress Circles */}
       <div className="mb-6">
         <div className="flex justify-center space-x-4">
-          {positions.map((_, index) => (
+          {positions.map((position, index) => (
             <div
               key={index}
               className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
-                index < votedPositionsCount
+                tempVotes[position]
                   ? 'bg-green-500 text-white'
                   : index === currentPositionIndex
                   ? 'bg-blue-500 text-white ring-2 ring-blue-300'
                   : 'bg-gray-300 text-gray-600'
               }`}
             >
-              {index < votedPositionsCount ? (
+              {tempVotes[position] ? (
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
@@ -209,8 +259,17 @@ export default function Vote() {
           </p>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            <div className={`mb-4 p-3 rounded ${
+              error.includes('already been used') || error.includes('IP address')
+                ? 'bg-red-100 border border-red-400 text-red-700' 
+                : 'bg-red-100 border border-red-400 text-red-700'
+            }`}>
               {error}
+              {(error.includes('already been used') || error.includes('IP address')) && (
+                <p className="text-sm mt-2">
+                  Redirecting to home page...
+                </p>
+              )}
             </div>
           )}
           
@@ -226,7 +285,7 @@ export default function Vote() {
                   setError('');
                 }}
                 className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                disabled={showNext || loading || candidatesLoading}
+                disabled={showNext || loading || candidatesLoading || completingVoting}
               >
                 <option value="">
                   {candidatesLoading ? 'Loading candidates...' : 'Choose a candidate'}
@@ -242,23 +301,35 @@ export default function Vote() {
             {showNext ? (
               <button
                 onClick={handleNext}
-                className="w-full py-3 rounded-md text-white font-semibold bg-green-600 hover:bg-green-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
+                disabled={completingVoting}
+                className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg ${
+                  completingVoting 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
               >
-                <div className="flex items-center justify-center">
-                  <span>
-                    {currentPositionIndex < positions.length - 1 ? 'Next Position' : 'Finish Voting'}
-                  </span>
-                  <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
+                {completingVoting ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Finalizing Votes...
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center">
+                    <span>
+                      {currentPositionIndex < positions.length - 1 ? 'Next Position' : 'Finish Voting'}
+                    </span>
+                    <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                )}
               </button>
             ) : (
               <button
                 onClick={handleVote}
-                disabled={loading || !selectedCandidate || candidates.length === 0}
+                disabled={loading || !selectedCandidate || candidates.length === 0 || completingVoting}
                 className={`w-full py-3 rounded-md text-white font-semibold transition-all duration-200 transform hover:scale-105 ${
-                  loading || !selectedCandidate || candidates.length === 0 
+                  loading || !selectedCandidate || candidates.length === 0 || completingVoting
                     ? 'bg-gray-400 cursor-not-allowed' 
                     : 'bg-blue-600 hover:bg-blue-700 shadow-lg'
                 }`}
@@ -266,7 +337,7 @@ export default function Vote() {
                 {loading ? (
                   <div className="flex items-center justify-center">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Submitting Vote...
+                    Storing Vote...
                   </div>
                 ) : (
                   `Vote for ${currentPosition}`
@@ -289,6 +360,13 @@ export default function Vote() {
                 }}
               ></div>
             </div>
+          </div>
+
+          {/* Session Info */}
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-800 text-center">
+              <strong>Session Voting:</strong> Your votes are stored temporarily. They will be finalized when you complete all positions.
+            </p>
           </div>
         </div>
       </div>

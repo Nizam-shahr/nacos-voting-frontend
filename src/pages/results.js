@@ -5,6 +5,7 @@ import Image from 'next/image';
 export default function PublicResults() {
   const [resultsData, setResultsData] = useState({
     voteCounts: {},
+    totalValidVotes: 0,
     totalVotes: 0,
     lastUpdated: ''
   });
@@ -18,7 +19,7 @@ export default function PublicResults() {
 
   const fetchVoteCounts = async () => {
     try {
-      const res = await fetch(`/api/public/votes`);
+      const res = await fetch('/api/public/votes');
       const data = await res.json();
       if (res.ok) {
         setResultsData(data);
@@ -50,10 +51,8 @@ export default function PublicResults() {
     );
   }
 
-  // Calculate total votes from voteCounts
-  const totalVotes = resultsData.totalVotes || Object.values(resultsData.voteCounts || {}).reduce((sum, candidates) => 
-    sum + (Array.isArray(candidates) ? candidates.reduce((candidateSum, candidate) => candidateSum + (candidate.votes || 0), 0) : 0), 0
-  );
+  // Use totalValidVotes from backend
+  const totalVotes = resultsData.totalValidVotes || 0;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -75,7 +74,7 @@ export default function PublicResults() {
             </div>
             <div className="mt-4 md:mt-0 text-center">
               <div className="bg-blue-100 text-blue-800 py-2 px-4 rounded-lg">
-                <p className="text-sm font-semibold">Total Votes Cast</p>
+                <p className="text-sm font-semibold">Total Valid Votes</p>
                 <p className="text-2xl font-bold">{totalVotes}</p>
               </div>
             </div>
@@ -122,8 +121,8 @@ export default function PublicResults() {
           {!resultsData.voteCounts || Object.keys(resultsData.voteCounts).length === 0 ? (
             <div className="bg-white rounded-lg shadow-lg p-8 text-center">
               <div className="text-6xl mb-4">🗳️</div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-2">No Votes Yet</h2>
-              <p className="text-gray-600">Election results will appear here once voting begins.</p>
+              <h2 className="text-xl font-semibold text-gray-800 mb-2">No Valid Votes Yet</h2>
+              <p className="text-gray-600">Election results will appear here once valid votes are recorded.</p>
             </div>
           ) : (
             Object.entries(resultsData.voteCounts).map(([position, candidates]) => {
@@ -140,7 +139,7 @@ export default function PublicResults() {
                       <div>
                         <h2 className="text-2xl font-bold text-gray-800">{position}</h2>
                         <p className="text-gray-600 mt-1">
-                          {totalPositionVotes} vote{totalPositionVotes !== 1 ? 's' : ''} cast
+                          {totalPositionVotes} valid vote{totalPositionVotes !== 1 ? 's' : ''} cast
                         </p>
                       </div>
                       {winner && (
@@ -212,9 +211,8 @@ export default function PublicResults() {
           <div className="text-center">
             <h3 className="text-lg font-semibold text-gray-800 mb-2">About These Results</h3>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              These results are updated in real-time as votes are cast. The system ensures complete transparency 
-              in the NACOS 2025/2026 election process. Results are automatically calculated and displayed 
-              without any manual intervention.
+              These results are updated in real-time and reflect only valid votes (completed voting sessions). 
+              The system ensures complete transparency in the NACOS 2025/2026 election process.
             </p>
             {resultsData.lastUpdated && (
               <p className="text-sm text-gray-500 mt-4">
