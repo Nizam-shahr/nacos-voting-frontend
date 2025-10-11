@@ -21,7 +21,7 @@ export default function PublicVotesTable() {
 
   const fetchVotes = async () => {
     try {
-      const res = await fetch('https://nacos-voting-backend-2ml5.onrender.com/api/dev/votes-table');
+      const res = await fetch('/api/dev/votes-table');
       const data = await res.json();
       if (res.ok) {
         const validVotes = data.votes.filter(vote => vote.isValid).length;

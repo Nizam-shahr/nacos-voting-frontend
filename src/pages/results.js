@@ -17,7 +17,7 @@ export default function PublicResults() {
 
   const fetchVoteCounts = async () => {
     try {
-      const res = await fetch('https://nacos-voting-backend-2ml5.onrender.com/api/public/votes');
+      const res = await fetch('/api/public/votes');
       const data = await res.json();
       if (res.ok) {
         setResultsData({ ...data, lastUpdated: new Date().toISOString() });

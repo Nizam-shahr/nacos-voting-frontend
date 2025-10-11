@@ -52,7 +52,7 @@ const Vote = () => {
 
     const fetchPositions = async () => {
       try {
-        const response = await axios.get('https://nacos-voting-backend-2ml5.onrender.com/api/positions');
+        const response = await axios.get('/api/positions');
         console.log('Positions fetched:', response.data);
         setPositions(response.data);
         if (user.remainingPositions && user.remainingPositions.length > 0) {
@@ -70,7 +70,7 @@ const Vote = () => {
   const fetchCandidates = async (position) => {
     try {
       setLoading(true);
-      const response = await axios.get(`https://nacos-voting-backend-2ml5.onrender.com/api/candidates/${position}`);
+      const response = await axios.get(`/api/candidates/${position}`);
       console.log(`Candidates for ${position}:`, response.data);
       setCandidates(response.data);
       setLoading(false);
@@ -95,7 +95,7 @@ const Vote = () => {
         position: positions[currentPositionIndex],
         deviceId: user.deviceId
       });
-      const response = await axios.post('https://nacos-voting-backend-2ml5.onrender.com/api/vote', {
+      const response = await axios.post('/api/vote', {
         institutionalEmail: user.institutionalEmail,
         candidateId: selectedCandidate,
         position: positions[currentPositionIndex],
@@ -119,7 +119,7 @@ const Vote = () => {
       }
 
       if (newRemainingPositions.length === 0) {
-        await axios.post('https://nacos-voting-backend-2ml5.onrender.com/api/complete-voting', {
+        await axios.post('/api/complete-voting', {
           institutionalEmail: user.institutionalEmail,
           deviceId: user.deviceId
         });

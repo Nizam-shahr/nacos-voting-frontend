@@ -57,7 +57,7 @@ const SignIn = () => {
     }
 
     try {
-      const response = await axios.post('https://nacos-voting-backend-2ml5.onrender.com/api/sign-in', {
+      const response = await axios.post('/api/sign-in', {
         institutionalEmail,
         personalEmail,
         matricNumber,
