@@ -1,101 +1,192 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
-import Fingerprint2 from 'fingerprintjs2';
 
-export default function SignIn() {
-  const [formData, setFormData] = useState({
-    institutionalEmail: '',
-    personalEmail: '',
-    matricNumber: '',
-    fullName: ''
-  });
+const SignIn = () => {
+  const [institutionalEmail, setInstitutionalEmail] = useState('');
+  const [personalEmail, setPersonalEmail] = useState('');
+  const [matricNumber, setMatricNumber] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [deviceId, setDeviceId] = useState(null);
-  const [countdown, setCountdown] = useState('');
-  const [isVotingOpen, setIsVotingOpen] = useState(false);
   const router = useRouter();
 
+  const VOTING_START_TIME = new Date('2025-10-11T12:00:00+01:00').getTime();
+
   useEffect(() => {
-    // Generate device ID
-    Fingerprint2.get((components) => {
-      const deviceId = Fingerprint2.x64hash128(components.map((pair) => pair.value).join(), 31);
-      setDeviceId(deviceId);
-      console.log('Device ID:', deviceId);
-    });
+    if (typeof window !== 'undefined') {
+      try {
+        const storedDeviceId = localStorage.getItem('deviceId');
+        if (storedDeviceId) {
+          setDeviceId(storedDeviceId);
+        } else {
+          const newDeviceId = 'device-' + Math.random().toString(36).substring(2);
+          localStorage.setItem('deviceId', newDeviceId);
+          setDeviceId(newDeviceId);
+        }
+      } catch (storageError) {
+        console.error('localStorage error:', storageError);
+        setError('Failed to access device storage. Ensure browser storage is enabled.');
+      }
+    }
+  }, []);
 
-    // Countdown to October 11, 2025, 12:00 PM WAT (UTC+1)
-    const votingStartTime = new Date('2025-10-11T12:00:00+01:00').getTime(); // 1760238000000 ms
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const timeLeft = votingStartTime - now;
+  useEffect(() => {
+    const checkTime = () => {
+      const now = Date.now();
+      if (now < VOTING_START_TIME) {
+        setError(`Voting starts at 12:00 PM WAT on October 11, 2025. Please wait.`);
+      }
+    };
+    checkTime();
+    const interval = setInterval(checkTime, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
-      if (timeLeft <= 0) {
-        setIsVotingOpen(true);
-        setCountdown('Voting is now open!');
+  const handleSignIn = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    if (!institutionalEmail || !personalEmail || !matricNumber || !fullName || !deviceId) {
+      setError('All fields are required');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await axios.post('https://nacos-voting-backend-2ml5.onrender.com/api/sign-in', {
+        institutionalEmail,
+        personalEmail,
+        matricNumber,
+        fullName,
+        deviceId
+      });
+
+      if (response.data.alreadyVoted) {
+        setError('You have already voted.');
+        setLoading(false);
         return;
       }
 
-      const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-      const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-      setCountdown(`Voting starts in ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-    };
-
-    updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!deviceId) {
-      setError('Device identification failed. Please try again.');
-      return;
-    }
-    if (!isVotingOpen) {
-      setError('Voting has not started yet. Please wait until 12:00 PM WAT.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/sign-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, deviceId })
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        localStorage.setItem('user', JSON.stringify({
-          institutionalEmail: data.institutionalEmail,
-          personalEmail: data.personalEmail,
-          matricNumber: data.matricNumber,
-          fullName: data.fullName,
-          sessionToken: data.sessionToken
-        }));
-        router.push('/vote');
-      } else {
-        setError(data.error || 'Failed to sign in');
+      if (response.data.emailBlocked) {
+        setError('This personal email has already been used by another student.');
+        setLoading(false);
+        return;
       }
+
+      if (response.data.deviceBlocked) {
+        setError('This device has already been used by another user.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        localStorage.setItem('user', JSON.stringify({
+          institutionalEmail: response.data.institutionalEmail,
+          deviceId: response.data.deviceId,
+          remainingPositions: response.data.remainingPositions,
+          continueVoting: response.data.continueVoting
+        }));
+      } catch (storageError) {
+        console.error('localStorage error:', storageError);
+        setError('Failed to store session. Ensure browser storage is enabled.');
+        setLoading(false);
+        return;
+      }
+
+      router.push('/vote');
     } catch (err) {
-      setError('Failed to sign in');
-    } finally {
+      console.error('Sign-in error:', err);
+      if (err.response?.status === 400) {
+        setError(err.response.data.error || 'Invalid input. Please check your details.');
+      } else if (err.response?.status === 500) {
+        setError('Server error. Please try again later or contact support.');
+      } else {
+        setError('Failed to connect to the server. Please check your network.');
+      }
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 transform transition-all hover:scale-105">
-       ELECTION SUSPENDED TILL FURTHER NOTICE
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md sm:max-w-lg p-6 sm:p-8 fade-in">
+        <div className="flex justify-center mb-6">
+          <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={100} height={100} className="rounded-full" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-center text-gray-800 mb-4">NACOS Election 2025/2026</h1>
+        {error && (
+          <p className="text-red-500 text-center bg-red-50 p-3 rounded-lg mb-4 animate-pulse">{error}</p>
+        )}
+        <form onSubmit={handleSignIn} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Institutional Email</label>
+            <input
+              type="email"
+              value={institutionalEmail}
+              onChange={(e) => setInstitutionalEmail(e.target.value)}
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              placeholder="2203sen001@alhikmah.edu.ng"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Personal Email</label>
+            <input
+              type="email"
+              value={personalEmail}
+              onChange={(e) => setPersonalEmail(e.target.value)}
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              placeholder="example@gmail.com"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Matric Number</label>
+            <input
+              type="text"
+              value={matricNumber}
+              onChange={(e) => setMatricNumber(e.target.value)}
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              placeholder="22/03sen001"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Full Name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              placeholder="John Doe"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className={`w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 pulse'}`}
+            disabled={loading}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin h-5 w-5 mr-2 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8v-8H4z" />
+                </svg>
+                Signing In...
+              </span>
+            ) : (
+              'Sign In'
+            )}
+          </button>
+        </form>
       </div>
     </div>
   );
-}
+};
+
+export default SignIn;
