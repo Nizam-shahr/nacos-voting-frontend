@@ -65,7 +65,7 @@ export default function SignIn() {
 
     setLoading(true);
     try {
-      const res = await fetch('https://nacos-voting-backend-2ml5.onrender.com/api/sign-in', {
+      const res = await fetch('/api/sign-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, deviceId })
