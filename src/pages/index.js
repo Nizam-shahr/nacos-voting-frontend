@@ -11,10 +11,9 @@ const SignIn = () => {
   const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState('');
   const router = useRouter();
 
-  const VOTING_START_TIME = new Date('2025-10-11T19:00:00+01:00').getTime();
+  const VOTING_START_TIME = new Date('2025-10-11T12:00:00+01:00').getTime();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -35,24 +34,14 @@ const SignIn = () => {
   }, []);
 
   useEffect(() => {
-    const updateTimer = () => {
+    const checkTime = () => {
       const now = Date.now();
-      const timeDiff = VOTING_START_TIME - now;
-      if (timeDiff <= 0) {
-        setTimeLeft('');
-        setError('');
-        return;
+      if (now < VOTING_START_TIME) {
+        setError(`Voting starts at 12:00 PM WAT on October 11, 2025. Please wait.`);
       }
-
-      const hours = Math.floor(timeDiff / (1000 * 60 * 60));
-      const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-      setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
-      setError(`Voting starts at 7:00 PM WAT on October 11, 2025. Time remaining: ${hours}h ${minutes}m ${seconds}s`);
     };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
+    checkTime();
+    const interval = setInterval(checkTime, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -61,12 +50,6 @@ const SignIn = () => {
     setError('');
     setLoading(true);
 
-    if (Date.now() < VOTING_START_TIME) {
-      setError(`Voting starts at 7:00 PM WAT on October 11, 2025. Time remaining: ${timeLeft}`);
-      setLoading(false);
-      return;
-    }
-
     if (!institutionalEmail || !personalEmail || !matricNumber || !fullName || !deviceId) {
       setError('All fields are required');
       setLoading(false);
@@ -74,7 +57,7 @@ const SignIn = () => {
     }
 
     try {
-      const response = await axios.post('https://nacos-voting-backend-2ml5.onrender.com/api/sign-in', {
+      const response = await axios.post('/api/sign-in', {
         institutionalEmail,
         personalEmail,
         matricNumber,
@@ -138,12 +121,6 @@ const SignIn = () => {
         {error && (
           <p className="text-red-500 text-center bg-red-50 p-3 rounded-lg mb-4 animate-pulse">{error}</p>
         )}
-        {timeLeft && (
-          <div className="text-center mb-4">
-            <p className="text-gray-700 font-semibold">Election starts in:</p>
-            <p className="text-2xl font-bold text-blue-600">{timeLeft}</p>
-          </div>
-        )}
         <form onSubmit={handleSignIn} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Institutional Email</label>
@@ -154,7 +131,6 @@ const SignIn = () => {
               className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               placeholder="2203sen001@alhikmah.edu.ng"
               required
-              disabled={Date.now() < VOTING_START_TIME}
             />
           </div>
           <div>
@@ -166,7 +142,6 @@ const SignIn = () => {
               className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               placeholder="example@gmail.com"
               required
-              disabled={Date.now() < VOTING_START_TIME}
             />
           </div>
           <div>
@@ -178,7 +153,6 @@ const SignIn = () => {
               className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               placeholder="22/03sen001"
               required
-              disabled={Date.now() < VOTING_START_TIME}
             />
           </div>
           <div>
@@ -190,13 +164,12 @@ const SignIn = () => {
               className="mt-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               placeholder="John Doe"
               required
-              disabled={Date.now() < VOTING_START_TIME}
             />
           </div>
           <button
             type="submit"
-            className={`w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300 ${loading || Date.now() < VOTING_START_TIME ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 pulse'}`}
-            disabled={loading || Date.now() < VOTING_START_TIME}
+            className={`w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 pulse'}`}
+            disabled={loading}
           >
             {loading ? (
               <span className="flex items-center justify-center">
