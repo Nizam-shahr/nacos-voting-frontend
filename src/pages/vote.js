@@ -150,63 +150,7 @@ const Vote = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-100 flex flex-col items-center p-4">
-      <div className="w-full max-w-6xl fade-in">
-        <div className="flex justify-center mb-6">
-          <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={100} height={100} className="rounded-full" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-center text-gray-800 mb-4">NACOS Election Voting</h1>
-        <h2 className="text-xl sm:text-2xl font-semibold text-center text-gray-700 mb-6">Vote for {positions[currentPositionIndex]}</h2>
-        {error && (
-          <p className="text-red-500 text-center bg-red-50 p-3 rounded-lg mb-4 animate-pulse">{error}</p>
-        )}
-        {loading ? (
-          <div className="text-center">
-            <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8v-8H4z" />
-            </svg>
-            <p className="mt-4 text-gray-600">Loading candidates...</p>
-          </div>
-        ) : candidates.length === 0 ? (
-          <p className="text-red-500 text-center bg-red-50 p-3 rounded-lg">No candidates found for {positions[currentPositionIndex]}. Please contact support.</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {candidates.map(candidate => (
-              <div
-                key={candidate.id}
-                className={`p-4 border rounded-lg cursor-pointer transition-all duration-300 bg-white shadow-md hover:shadow-lg ${selectedCandidate === candidate.id ? 'border-blue-600 bg-blue-50 scale-105' : 'border-gray-300 hover:border-blue-400'}`}
-                onClick={() => setSelectedCandidate(candidate.id)}
-              >
-                <Image
-                  src={candidateImages[candidate.id] || '/images/default-candidate.jpg'}
-                  alt={candidate.name}
-                  width={300}
-                  height={200}
-                  className="w-full h-48 object-cover rounded-lg mb-3"
-                />
-                <h3 className="text-lg font-medium text-gray-800 text-center">{candidate.name}</h3>
-              </div>
-            ))}
-          </div>
-        )}
-        <button
-          onClick={handleVote}
-          className={`mt-8 py-3 px-6 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300 w-full sm:w-auto ${loading || !selectedCandidate ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 pulse'}`}
-          disabled={loading || !selectedCandidate}
-        >
-          {loading ? (
-            <span className="flex items-center justify-center">
-              <svg className="animate-spin h-5 w-5 mr-2 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8v-8H4z" />
-              </svg>
-              Submitting...
-            </span>
-          ) : (
-            'Submit Vote'
-          )}
-        </button>
-      </div>
+      VOTING ENDED
     </div>
   );
 };
