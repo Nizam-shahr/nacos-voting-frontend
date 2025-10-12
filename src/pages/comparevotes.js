@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
-import { votes } from '../../components/votes';
+import { impersonateVotes } from '../components/impersonate.js';
+import { votes as filteredVotes } from '../components/filtered_vote.js';
+
 
 const candidates = [
   { id: 'candidate111', name: 'Alowonle Olayinka Abdulrazzak', position: 'President' },
@@ -15,11 +17,12 @@ const candidates = [
   { id: 'candidate412', name: 'Abubakar Faruku Saad', position: 'Treasurer' }
 ];
 
-export default function PublicVotesTable() {
+export default function CompareVotes() {
   const [votesData, setVotesData] = useState({
     votes: [],
     totalVotes: 0,
     validVotes: 0,
+    invalidCounts: {},
     results: {},
     lastUpdated: null
   });
@@ -31,39 +34,49 @@ export default function PublicVotesTable() {
 
   useEffect(() => {
     if (isAuthorized) {
-      fetchVotes();
+      compareVotes();
     }
   }, [isAuthorized]);
 
-  const fetchVotes = async () => {
+  const compareVotes = async () => {
     try {
-      const emailRegex = /^(22|23|24)03(ins|cmp|sen|cyb)(0[0-8][0-9]|090)@alhikmah\.edu\.ng$/i;
+      // Convert impersonateVotes to lowercase for case-insensitive comparison
+      const lowerCaseImpersonateVotes = impersonateVotes.map(email => email.toLowerCase());
 
-      // Process votes from votes.js
-      const processedVotes = votes.map(vote => ({
+      // Process filtered votes with case-insensitive impersonate check
+      const processedVotes = filteredVotes.map(vote => ({
         ...vote,
         userInstitutionalEmail: vote.email,
-        isValid: emailRegex.test(vote.email)
+        isValid: lowerCaseImpersonateVotes.includes(vote.email.toLowerCase())
       }));
 
-      // Calculate vote counts per candidate
+      // Calculate vote counts per candidate (only valid votes)
       const results = {};
+      const invalidCounts = {};
       candidates.forEach(candidate => {
         if (!results[candidate.position]) {
           results[candidate.position] = [];
         }
-        const voteCount = processedVotes.filter(
+        if (!invalidCounts[candidate.name]) {
+          invalidCounts[candidate.name] = 0;
+        }
+        const validVoteCount = processedVotes.filter(
           vote => vote.candidate === candidate.name && vote.isValid
+        ).length;
+        const invalidVoteCount = processedVotes.filter(
+          vote => vote.candidate === candidate.name && !vote.isValid
         ).length;
         results[candidate.position].push({
           id: candidate.id,
           name: candidate.name,
-          voteCount,
+          voteCount: validVoteCount,
+          invalidVoteCount: invalidVoteCount,
           isEmailValid: true
         });
+        invalidCounts[candidate.name] = invalidVoteCount;
       });
 
-      // Determine winners for each position
+      // Determine winners for each position based on valid votes
       Object.keys(results).forEach(position => {
         results[position].sort((a, b) => b.voteCount - a.voteCount);
         const maxVotes = results[position][0]?.voteCount || 0;
@@ -79,11 +92,12 @@ export default function PublicVotesTable() {
         votes: processedVotes,
         totalVotes,
         validVotes,
+        invalidCounts,
         results,
         lastUpdated: new Date().toISOString()
       });
     } catch (err) {
-      setError('Failed to process votes');
+      setError('Failed to compare votes');
     } finally {
       setLoading(false);
     }
@@ -103,6 +117,7 @@ export default function PublicVotesTable() {
     const downloadData = {
       votes: votesData.votes.map(({ isValid, ...rest }) => rest),
       results: votesData.results,
+      invalidCounts: votesData.invalidCounts,
       totalVotes: votesData.totalVotes,
       validVotes: votesData.validVotes,
       lastUpdated: votesData.lastUpdated
@@ -112,7 +127,7 @@ export default function PublicVotesTable() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `filtered_votes_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `compared_votes_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -167,7 +182,7 @@ export default function PublicVotesTable() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8v-8H4z" />
           </svg>
-          <p className="mt-4 text-gray-600 text-lg">Loading votes table...</p>
+          <p className="mt-4 text-gray-600 text-lg">Loading vote comparison...</p>
         </div>
       </div>
     );
@@ -182,8 +197,8 @@ export default function PublicVotesTable() {
             <div className="flex items-center space-x-4">
               <Image src="/images/nacoss.jpg" alt="NACOS Logo" width={80} height={80} className="rounded-full" />
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Voting Activity Log</h1>
-                <p className="text-gray-600 mt-1">Detailed voting records - NACOS 2025/2026 Election</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Vote Comparison Log</h1>
+                <p className="text-gray-600 mt-1">Comparison with impersonate votes - NACOS 2025/2026 Election</p>
                 {votesData.lastUpdated && (
                   <p className="text-sm text-gray-500 mt-1">
                     Last updated: {new Date(votesData.lastUpdated).toLocaleString()}
@@ -203,10 +218,10 @@ export default function PublicVotesTable() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-wrap gap-4">
           <button
-            onClick={() => router.push('/results')}
+            onClick={() => router.push('/votes-table')}
             className="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-all duration-300 hover:scale-105 pulse"
           >
-            View Results Summary
+            View Votes Table
           </button>
           <button
             onClick={() => router.push('/')}
@@ -215,7 +230,7 @@ export default function PublicVotesTable() {
             Back to Home
           </button>
           <button
-            onClick={fetchVotes}
+            onClick={compareVotes}
             className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-all duration-300 hover:scale-105 pulse flex items-center"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -283,27 +298,17 @@ export default function PublicVotesTable() {
                 votesData.results[position].map(candidate => (
                   <div
                     key={candidate.id}
-                    className={`bg-gray-50 border ${candidate.isWinner ? 'border-green-200' : 'border-gray-200'} rounded-lg p-4 flex items-center space-x-4 transition-all duration-300 hover:shadow-md`}
+                    className={`bg-gray-50 border ${candidate.isWinner ? 'border-green-200' : 'border-gray-200'} rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
                   >
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {candidate.name} {candidate.isWinner && (
-                          <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium ml-2">
-                            🏆 Winner
-                          </span>
-                        )}
-                      </h3>
-                      <p className="text-sm text-gray-600">Votes: {candidate.voteCount}</p>
-                    </div>
-                    <div className={candidate.isWinner ? 'text-green-500' : 'text-blue-500'}>
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                        {candidate.isWinner ? (
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        ) : (
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        )}
-                      </svg>
-                    </div>
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      {candidate.name} {candidate.isWinner && (
+                        <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium ml-2">
+                          🏆 Winner
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-sm text-gray-600">Valid Votes: {candidate.voteCount}</p>
+                    <p className="text-sm text-red-600">Invalid Votes: {candidate.invalidVoteCount}</p>
                   </div>
                 ))
               )}
@@ -322,91 +327,91 @@ export default function PublicVotesTable() {
         <div className="bg-white rounded-lg shadow-lg p-6 fade-in">
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg animate-pulse">
-            {error}
-          </div>
-        )}
+              {error}
+            </div>
+          )}
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white">
-            <thead className="bg-gray-800 text-white">
-              <tr>
-                <th className="py-3 px-4 text-left text-sm font-semibold">#</th>
-                <th className="py-3 px-4 text-left text-sm font-semibold">Voter Email</th>
-                <th className="py-3 px-4 text-left text-sm font-semibold">Position</th>
-                <th className="py-3 px-4 text-left text-sm font-semibold">Candidate Voted For</th>
-                <th className="py-3 px-4 text-left text-sm font-semibold">Vote Timestamp</th>
-                <th className="py-3 px-4 text-left text-sm font-semibold">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {votesData.votes && votesData.votes.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full bg-white">
+              <thead className="bg-gray-800 text-white">
                 <tr>
-                  <td colSpan="6" className="py-8 px-4 text-center text-gray-500">
-                    <div className="text-4xl mb-2">🗳️</div>
-                    <p className="text-lg font-medium">No votes recorded yet</p>
-                    <p className="text-sm mt-2">Be the first to vote!</p>
-                  </td>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">#</th>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">Voter Email</th>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">Position</th>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">Candidate Voted For</th>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">Vote Timestamp</th>
+                  <th className="py-3 px-4 text-left text-sm font-semibold">Status</th>
                 </tr>
-              ) : (
-                votesData.votes && votesData.votes.map((vote, index) => (
-                  <tr
-                    key={index}
-                    className={`${
-                      index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
-                    } ${
-                      vote.isValid ? 'hover:bg-gray-100' : 'hover:bg-red-50'
-                    } transition-all duration-300`}
-                  >
-                    <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
-                      {index + 1}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                      <div className="font-mono text-xs bg-gray-100 p-1 rounded">
-                        {vote.userInstitutionalEmail || 'N/A'}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                      <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-medium">
-                        {vote.position}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
-                      {vote.candidate || 'Unknown Candidate'}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-800 border-t">
-                      {vote.timestamp ? new Date(vote.timestamp).toLocaleString() : 'N/A'}
-                    </td>
-                    <td className="py-3 px-4 text-sm border-t">
-                      {vote.isValid ? (
-                        <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium">
-                          ✅ VALID
-                        </span>
-                      ) : (
-                        <span className="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs font-medium">
-                          ❌ INVALID
-                        </span>
-                      )}
+              </thead>
+              <tbody>
+                {votesData.votes && votesData.votes.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-8 px-4 text-center text-gray-500">
+                      <div className="text-4xl mb-2">🗳️</div>
+                      <p className="text-lg font-medium">No votes recorded yet</p>
+                      <p className="text-sm mt-2">Be the first to vote!</p>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-600">
-          <div>
-            Showing <span className="font-semibold">{votesData.votes ? votesData.votes.length : 0}</span> votes •
-            <span className="text-green-600 font-semibold ml-2">{votesData.validVotes} valid</span>
+                ) : (
+                  votesData.votes && votesData.votes.map((vote, index) => (
+                    <tr
+                      key={index}
+                      className={`${
+                        index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
+                      } ${
+                        vote.isValid ? 'hover:bg-gray-100' : 'hover:bg-red-50'
+                      } transition-all duration-300`}
+                    >
+                      <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
+                        {index + 1}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
+                        <div className="font-mono text-xs bg-gray-100 p-1 rounded">
+                          {vote.userInstitutionalEmail || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
+                        <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-medium">
+                          {vote.position || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-800 border-t font-medium">
+                        {vote.candidate || 'Unknown Candidate'}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-800 border-t">
+                        {vote.timestamp ? new Date(vote.timestamp).toLocaleString() : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-sm border-t">
+                        {vote.isValid ? (
+                          <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium">
+                            ✅ VALID
+                          </span>
+                        ) : (
+                          <span className="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs font-medium">
+                            ❌ INVALID
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <div className="mt-2 sm:mt-0">
-            <span className="bg-green-100 text-green-800 py-1 px-2 rounded text-xs">
-              Live Data
-            </span>
+
+          <div className="mt-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-600">
+            <div>
+              Showing <span className="font-semibold">{votesData.votes ? votesData.votes.length : 0}</span> votes •
+              <span className="text-green-600 font-semibold ml-2">{votesData.validVotes} valid</span>
+            </div>
+            <div className="mt-2 sm:mt-0">
+              <span className="bg-green-100 text-green-800 py-1 px-2 rounded text-xs">
+                Live Data
+              </span>
+            </div>
           </div>
         </div>
       </div>
     </div>
-    </div>
-  )
+  );
 }
