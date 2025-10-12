@@ -350,7 +350,7 @@ export default function CompareVotes() {
                       {candidate.name} 
                     </h3>
                     <p className="text-sm text-gray-600">Valid Votes: {candidate.voteCount}</p>
-                    <p className="text-sm text-red-600">Invalid Votes: {candidate.invalidVoteCount}</p>
+                    <p className="text-sm text-red-600">Impersonated Votes: {candidate.invalidVoteCount}</p>
                   </div>
                 ))
               )}
