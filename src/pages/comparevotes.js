@@ -300,7 +300,9 @@ export default function CompareVotes() {
                     key={candidate.id}
                     className={`bg-gray-50 border 'border-gray-200 rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
                   >
-                   
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      {candidate.name} 
+                    </h3>
                     <p className="text-sm text-gray-600">Valid Votes: {candidate.voteCount}</p>
                     <p className="text-sm text-red-600">Invalid Votes: {candidate.invalidVoteCount}</p>
                   </div>
