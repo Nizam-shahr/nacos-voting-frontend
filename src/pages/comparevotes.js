@@ -298,15 +298,9 @@ export default function CompareVotes() {
                 votesData.results[position].map(candidate => (
                   <div
                     key={candidate.id}
-                    className={`bg-gray-50 border ${candidate.isWinner ? 'border-green-200' : 'border-gray-200'} rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
+                    className={`bg-gray-50 border 'border-gray-200 rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
                   >
-                    <h3 className="text-lg font-semibold text-gray-800">
-                      {candidate.name} {candidate.isWinner && (
-                        <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium ml-2">
-                          🏆 Winner
-                        </span>
-                      )}
-                    </h3>
+                   
                     <p className="text-sm text-gray-600">Valid Votes: {candidate.voteCount}</p>
                     <p className="text-sm text-red-600">Invalid Votes: {candidate.invalidVoteCount}</p>
                   </div>
