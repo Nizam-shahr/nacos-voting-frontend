@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { impersonateVotes } from '../components/impersonate.js';
-import { votes as filteredVotes } from '../components/filtered_vote.js';
-
+import { votes as filteredVotes } from '../components/filtered_votes.js';
+import { votes as possibleVoters } from '../components/votes.js';
 
 const candidates = [
   { id: 'candidate111', name: 'Alowonle Olayinka Abdulrazzak', position: 'President' },
@@ -16,6 +16,8 @@ const candidates = [
   { id: 'candidate411', name: 'Surajo Umar Sadiq', position: 'Treasurer' },
   { id: 'candidate412', name: 'Abubakar Faruku Saad', position: 'Treasurer' }
 ];
+
+const POSITIONS_COUNT = 4; // Number of positions: President, Vice President, Senate President, Treasurer
 
 export default function CompareVotes() {
   const [votesData, setVotesData] = useState({
@@ -120,6 +122,10 @@ export default function CompareVotes() {
       invalidCounts: votesData.invalidCounts,
       totalVotes: votesData.totalVotes,
       validVotes: votesData.validVotes,
+      totalPossibleVoters: possibleVoters.length,
+      totalPossibleVotes: possibleVoters.length * POSITIONS_COUNT,
+      totalActualVoters: votesData.validVotes,
+      totalActualVotes: votesData.validVotes * POSITIONS_COUNT,
       lastUpdated: votesData.lastUpdated
     };
     const dataStr = JSON.stringify(downloadData, null, 2);
@@ -137,6 +143,12 @@ export default function CompareVotes() {
   const validPercentage = votesData.totalVotes > 0
     ? ((votesData.validVotes / votesData.totalVotes) * 100).toFixed(1)
     : 0;
+
+  // Calculate new metrics
+  const totalPossibleVoters = possibleVoters.length;
+  const totalPossibleVotes = totalPossibleVoters * POSITIONS_COUNT;
+  const totalActualVoters = votesData.validVotes;
+  const totalActualVotes = totalActualVoters * POSITIONS_COUNT;
 
   if (!isAuthorized) {
     return (
@@ -209,6 +221,25 @@ export default function CompareVotes() {
             <div className="mt-4 sm:mt-0 bg-blue-100 text-blue-800 py-3 px-4 rounded-lg shadow-md">
               <p className="text-sm font-semibold">Total Valid Votes</p>
               <p className="text-2xl font-bold">{votesData.validVotes}</p>
+            </div>
+          </div>
+          {/* New Metrics Display */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-md">
+              <p className="text-sm font-semibold text-gray-700">Total Possible Voters</p>
+              <p className="text-2xl font-bold text-gray-800">{totalPossibleVoters}</p>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-md">
+              <p className="text-sm font-semibold text-gray-700">Total Possible Votes</p>
+              <p className="text-2xl font-bold text-gray-800">{totalPossibleVotes}</p>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-md">
+              <p className="text-sm font-semibold text-gray-700">Total Actual Voters</p>
+              <p className="text-2xl font-bold text-gray-800">{totalActualVoters}</p>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-md">
+              <p className="text-sm font-semibold text-gray-700">Total Actual Votes</p>
+              <p className="text-2xl font-bold text-gray-800">{totalActualVotes}</p>
             </div>
           </div>
         </div>
@@ -298,7 +329,7 @@ export default function CompareVotes() {
                 votesData.results[position].map(candidate => (
                   <div
                     key={candidate.id}
-                    className={`bg-gray-50 border 'border-gray-200 rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
+                    className={`bg-gray-50 border 'border-gray-200' rounded-lg p-4 flex flex-col space-y-2 transition-all duration-300 hover:shadow-md`}
                   >
                     <h3 className="text-lg font-semibold text-gray-800">
                       {candidate.name} 
