@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { impersonateVotes } from '../components/impersonate.js';
-import { votes as filteredVotes } from '../components/filtered_votes.js';
+import { votes as filteredVotes } from '../components/filtered_vote.js';
 import { votes as possibleVoters } from '../components/votes.js';
 
 const candidates = [
